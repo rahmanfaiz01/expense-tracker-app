@@ -1,9 +1,11 @@
 """Tests for the documented deletion behavior (cascade / set null)."""
 
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Category, Transaction
+from app.models import Category, RefreshToken, Transaction
 from app.tests.factories import make_category, make_transaction, make_user
 
 
@@ -19,6 +21,25 @@ def test_deleting_user_cascades_to_categories_and_transactions(db_session: Sessi
 
     assert db_session.scalar(select(func.count()).select_from(Category)) == 0
     assert db_session.scalar(select(func.count()).select_from(Transaction)) == 0
+
+
+def test_deleting_user_cascades_to_refresh_tokens(db_session: Session) -> None:
+    user = make_user()
+    db_session.add(user)
+    db_session.flush()
+    db_session.add(
+        RefreshToken(
+            user_id=user.id,
+            token_hash="a" * 64,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+        )
+    )
+    db_session.flush()
+
+    db_session.delete(user)
+    db_session.flush()
+
+    assert db_session.scalar(select(func.count()).select_from(RefreshToken)) == 0
 
 
 def test_deleting_category_sets_transaction_category_null(db_session: Session) -> None:

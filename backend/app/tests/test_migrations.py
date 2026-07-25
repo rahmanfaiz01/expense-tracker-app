@@ -6,7 +6,7 @@ import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import DateTime, create_engine, inspect
 from sqlalchemy.engine import Engine
 
 from app.db.base import Base
@@ -14,7 +14,8 @@ from app.tests.db_utils import drop_database, make_alembic_config, reset_databas
 
 _MIGRATION_DB_URL = "postgresql+psycopg://postgres:postgres@localhost:5432/expense_tracker_migtest"
 
-_EXPECTED_TABLES = {"users", "categories", "transactions"}
+_EXPECTED_TABLES = {"users", "categories", "transactions", "refresh_tokens"}
+_PHASE_1_REVISION = "0001_initial"
 
 
 @pytest.fixture()
@@ -47,6 +48,55 @@ def test_upgrade_downgrade_upgrade_roundtrip(fresh_db: str) -> None:
 
     command.upgrade(cfg, "head")
     assert _EXPECTED_TABLES <= _table_names(fresh_db)
+
+
+def test_downgrade_to_previous_revision_only_drops_refresh_tokens(fresh_db: str) -> None:
+    """The auth revision must be reversible without touching the Phase 1 tables."""
+    cfg = make_alembic_config(fresh_db)
+    command.upgrade(cfg, "head")
+    assert "refresh_tokens" in _table_names(fresh_db)
+
+    command.downgrade(cfg, _PHASE_1_REVISION)
+    tables = _table_names(fresh_db)
+    assert "refresh_tokens" not in tables
+    assert {"users", "categories", "transactions"} <= tables
+
+    command.upgrade(cfg, "head")
+    assert "refresh_tokens" in _table_names(fresh_db)
+
+
+def test_refresh_tokens_schema(fresh_db: str) -> None:
+    cfg = make_alembic_config(fresh_db)
+    command.upgrade(cfg, "head")
+
+    engine = create_engine(fresh_db)
+    try:
+        insp = inspect(engine)
+        indexes = {ix["name"] for ix in insp.get_indexes("refresh_tokens")}
+        assert "ix_refresh_tokens_user_id_family_id" in indexes
+
+        uniques = {u["name"] for u in insp.get_unique_constraints("refresh_tokens")}
+        assert "uq_refresh_tokens_token_hash" in uniques
+
+        fk = insp.get_foreign_keys("refresh_tokens")[0]
+        assert fk["referred_table"] == "users"
+        assert fk["options"]["ondelete"].upper() == "CASCADE"
+
+        columns = {c["name"]: c for c in insp.get_columns("refresh_tokens")}
+        assert set(columns) == {
+            "id",
+            "user_id",
+            "family_id",
+            "token_hash",
+            "expires_at",
+            "revoked_at",
+            "created_at",
+            "updated_at",
+        }
+        assert isinstance(columns["expires_at"]["type"], DateTime)
+        assert columns["expires_at"]["type"].timezone is True
+    finally:
+        engine.dispose()
 
 
 def test_migration_creates_expected_constraints_and_indexes(fresh_db: str) -> None:

@@ -58,6 +58,8 @@ jobs:
       - name: Alembic upgrade / downgrade / upgrade
         run: |
           alembic upgrade head
+          alembic downgrade 0001_initial
+          alembic upgrade head
           alembic downgrade base
           alembic upgrade head
 

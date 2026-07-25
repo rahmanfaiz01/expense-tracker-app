@@ -65,10 +65,12 @@ def test_transaction_type_invalid_rejected() -> None:
 
 def test_user_email_and_password_validation() -> None:
     with pytest.raises(ValidationError):
-        UserCreate(email="not-an-email", password="longenough")
+        UserCreate(email="not-an-email", password="longenough1")
     with pytest.raises(ValidationError):
-        UserCreate(email="a@b.com", password="short")
-    user = UserCreate(email="a@b.com", password="longenough")
+        UserCreate(email="a@b.com", password="short1")
+    with pytest.raises(ValidationError):
+        UserCreate(email="a@b.com", password="longenough")
+    user = UserCreate(email=" A@B.com ", password="longenough1")
     assert user.email == "a@b.com"
 
 
