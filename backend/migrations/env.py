@@ -1,22 +1,25 @@
 """Alembic migration environment.
 
-The target metadata is taken from ``app.db.base.Base``. Feature models will be
-imported here in later phases so that ``alembic revision --autogenerate`` can
-detect them. The database URL is sourced from application settings.
+The target metadata is taken from ``app.db.base.Base`` after importing all
+models so ``alembic revision --autogenerate`` can detect them. The database URL
+defaults to application settings but can be overridden by the caller (e.g. tests)
+via ``config.set_main_option("sqlalchemy.url", ...)``.
 """
 
 from logging.config import fileConfig
 
+# ``app.models`` import registers all tables on ``Base.metadata``.
+import app.models  # noqa: F401
 from alembic import context
 from app.core.config import settings
 from app.db.base import Base
 from sqlalchemy import engine_from_config, pool
 
-# Import models here so their tables register on ``Base.metadata``.
-# (No feature models exist yet in Phase 0.)
-
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+
+# Prefer an explicitly provided URL (e.g. from tests); fall back to settings.
+_db_url = config.get_main_option("sqlalchemy.url") or settings.DATABASE_URL
+config.set_main_option("sqlalchemy.url", _db_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -27,7 +30,7 @@ target_metadata = Base.metadata
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode (emit SQL without a DB connection)."""
     context.configure(
-        url=settings.DATABASE_URL,
+        url=_db_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},

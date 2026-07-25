@@ -16,6 +16,23 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: expense_tracker
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/expense_tracker
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/expense_tracker_test
     steps:
       - uses: actions/checkout@v4
 
@@ -37,6 +54,12 @@ jobs:
 
       - name: Mypy
         run: mypy
+
+      - name: Alembic upgrade / downgrade / upgrade
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
 
       - name: Pytest
         run: pytest
