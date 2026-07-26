@@ -12,14 +12,16 @@ from app.models.mixins import TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
     from app.models.category import Category
+    from app.models.refresh_token import RefreshToken
     from app.models.transaction import Transaction
 
 
 class User(UUIDMixin, TimestampMixin, Base):
     """An application user who owns categories and transactions.
 
-    Deletion behavior: deleting a user cascades to all of their categories and
-    transactions (``ON DELETE CASCADE`` at the database level).
+    Deletion behavior: deleting a user cascades to all of their categories,
+    transactions and refresh tokens (``ON DELETE CASCADE`` at the database
+    level).
     """
 
     __tablename__ = "users"
@@ -35,6 +37,11 @@ class User(UUIDMixin, TimestampMixin, Base):
         passive_deletes=True,
     )
     transactions: Mapped[list[Transaction]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    refresh_tokens: Mapped[list[RefreshToken]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
         passive_deletes=True,

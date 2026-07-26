@@ -1,9 +1,11 @@
-"""Pydantic schemas for request/response validation.
+"""Pydantic schemas for request/response validation."""
 
-Phase 1 defines the schemas used to validate the data models. API endpoints
-that consume them are added in later phases.
-"""
-
+from app.schemas.auth import (
+    AuthResponse,
+    LoginRequest,
+    RegisterRequest,
+    TokenResponse,
+)
 from app.schemas.category import (
     CategoryCreate,
     CategoryRead,
@@ -17,9 +19,13 @@ from app.schemas.transaction import (
 from app.schemas.user import UserCreate, UserRead, UserUpdate
 
 __all__ = [
+    "AuthResponse",
     "CategoryCreate",
     "CategoryRead",
     "CategoryUpdate",
+    "LoginRequest",
+    "RegisterRequest",
+    "TokenResponse",
     "TransactionCreate",
     "TransactionRead",
     "TransactionUpdate",
