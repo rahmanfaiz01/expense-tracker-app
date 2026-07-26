@@ -1,20 +1,27 @@
-import { Box, Container, Paper, Typography } from '@mui/material';
-import { HealthCheck } from './features/health/HealthCheck';
+import { Navigate, Route, Routes } from 'react-router-dom';
+import { ProtectedRoute, PublicOnlyRoute } from './auth/ProtectedRoute';
+import { AppLayout } from './layouts/AppLayout';
+import { CategoriesPage } from './pages/CategoriesPage';
+import { DashboardPage } from './pages/DashboardPage';
+import { LoginPage } from './pages/LoginPage';
+import { RegisterPage } from './pages/RegisterPage';
+import { TransactionsPage } from './pages/TransactionsPage';
 
 const App = () => (
-  <Container maxWidth="md" sx={{ py: 6 }}>
-    <Box mb={4}>
-      <Typography variant="h3" component="h1" gutterBottom>
-        Expense Tracker
-      </Typography>
-      <Typography variant="subtitle1" color="text.secondary">
-        Phase 0 — project scaffold. Features arrive in later phases.
-      </Typography>
-    </Box>
-    <Paper variant="outlined" sx={{ p: 3 }}>
-      <HealthCheck />
-    </Paper>
-  </Container>
+  <Routes>
+    <Route element={<PublicOnlyRoute />}>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
+    </Route>
+    <Route element={<ProtectedRoute />}>
+      <Route element={<AppLayout />}>
+        <Route path="/" element={<DashboardPage />} />
+        <Route path="/transactions" element={<TransactionsPage />} />
+        <Route path="/categories" element={<CategoriesPage />} />
+      </Route>
+    </Route>
+    <Route path="*" element={<Navigate to="/" replace />} />
+  </Routes>
 );
 
 export default App;
