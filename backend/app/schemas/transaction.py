@@ -1,5 +1,6 @@
 """Transaction Pydantic schemas."""
 
+import enum
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
@@ -55,3 +56,40 @@ class TransactionRead(ORMModel):
     occurred_on: date
     created_at: datetime
     updated_at: datetime
+    category_name: str | None = None
+
+
+class TransactionSort(str, enum.Enum):
+    """Sortable transaction columns."""
+
+    OCCURRED_ON = "occurred_on"
+    AMOUNT = "amount"
+    CREATED_AT = "created_at"
+    DESCRIPTION = "description"
+
+
+class SortOrder(str, enum.Enum):
+    ASC = "asc"
+    DESC = "desc"
+
+
+class TransactionFilters(BaseModel):
+    """Search, filter and sort options shared by the list and CSV endpoints."""
+
+    q: str | None = None
+    type: TransactionType | None = None
+    category_id: uuid.UUID | None = None
+    date_from: date | None = None
+    date_to: date | None = None
+    sort: TransactionSort = TransactionSort.OCCURRED_ON
+    order: SortOrder = SortOrder.DESC
+
+
+class TransactionPage(BaseModel):
+    """One page of transactions plus the counters the table UI needs."""
+
+    items: list[TransactionRead]
+    total: int
+    page: int
+    page_size: int
+    pages: int

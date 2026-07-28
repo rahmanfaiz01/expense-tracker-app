@@ -64,6 +64,11 @@ class Transaction(UUIDMixin, TimestampMixin, Base):
     user: Mapped[User] = relationship(back_populates="transactions")
     category: Mapped[Category | None] = relationship(back_populates="transactions")
 
+    @property
+    def category_name(self) -> str | None:
+        """Name of the linked category, if any (denormalized for responses)."""
+        return self.category.name if self.category is not None else None
+
     def __repr__(self) -> str:  # pragma: no cover - debugging helper
         return (
             f"<Transaction id={self.id!r} type={self.type!r} "

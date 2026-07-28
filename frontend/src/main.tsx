@@ -1,9 +1,9 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import CssBaseline from '@mui/material/CssBaseline';
-import { ThemeProvider } from '@mui/material/styles';
+import { BrowserRouter } from 'react-router-dom';
 import App from './App';
-import { buildTheme } from './theme';
+import { AuthProvider } from './auth/AuthProvider';
+import { ColorModeProvider } from './theme/ColorModeProvider';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -12,9 +12,12 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <ThemeProvider theme={buildTheme('light')}>
-      <CssBaseline />
-      <App />
-    </ThemeProvider>
+    <ColorModeProvider>
+      <BrowserRouter>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </BrowserRouter>
+    </ColorModeProvider>
   </StrictMode>,
 );

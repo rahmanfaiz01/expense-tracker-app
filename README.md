@@ -1,14 +1,24 @@
 # Expense Tracker
 
-A modern full-stack expense tracker. Delivered so far: the project scaffold
-(FastAPI backend, React + Vite + MUI frontend, tooling and CI), the data layer
-(`users`, `categories`, `transactions` + migrations), and **backend
-authentication** — registration, login, refresh-token rotation, logout and
-`GET /api/v1/users/me`.
+A modern full-stack expense tracker: register and sign in, record income and
+expenses, organise them with categories, search/filter/sort/paginate the
+history, export it to CSV, and review balances, monthly trends and per-category
+breakdowns on a responsive dashboard with dark mode.
 
-Category and transaction endpoints, the dashboard, reports and the frontend
-auth pages are intentionally **not** included yet — see the roadmap in the
-architecture doc.
+## Features
+
+- **Auth** — registration, login, logout, JWT access token kept in memory and a
+  rotating refresh token in an HttpOnly cookie (silent refresh on start-up and
+  on any `401`), protected routes.
+- **Transactions** — create, edit, delete, description search, filters by type,
+  category and date range, sortable columns, pagination and CSV export that
+  honours the active filters.
+- **Categories** — per-user income/expense categories with colors; deleting one
+  keeps its transactions and marks them uncategorized.
+- **Dashboard** — income/expense/balance cards plus Recharts monthly and
+  by-category charts, with loading, empty and error states throughout.
+- Every endpoint is scoped to the authenticated user; another account's ids
+  simply return `404`.
 
 ## Tech stack
 
@@ -83,8 +93,10 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173 — the page shows a **Backend connectivity** panel
-that calls `/api/v1/health` and reports success/failure.
+Open http://localhost:5173, create an account and you land on the dashboard.
+The dev server proxies nothing — the frontend calls the API at `VITE_API_URL`
+(default `http://localhost:8000/api/v1`) with credentials, so keep the backend's
+`BACKEND_CORS_ORIGINS` pointing at the Vite origin.
 
 ## Common commands
 
@@ -349,6 +361,38 @@ curl -X POST http://localhost:8000/api/v1/auth/refresh -b cookies.txt -c cookies
 curl -i -X POST http://localhost:8000/api/v1/auth/logout -b cookies.txt
 ```
 
+## Application API
+
+All routes below require `Authorization: Bearer <access token>` and only ever
+touch the authenticated user's own rows.
+
+| Method                 | Path                                | Notes                                                              |
+| ---------------------- | ----------------------------------- | ------------------------------------------------------------------ |
+| `GET`                  | `/api/v1/categories`                | optional `type=income\|expense`                                     |
+| `POST`                 | `/api/v1/categories`                | `409` on a duplicate `(name, type)`                                  |
+| `GET/PATCH/DELETE`     | `/api/v1/categories/{id}`           | delete keeps transactions (`category_id → NULL`)                     |
+| `GET`                  | `/api/v1/transactions`              | `q`, `type`, `category_id`, `date_from`, `date_to`, `sort`, `order`, `page`, `page_size` |
+| `POST`                 | `/api/v1/transactions`              | category must be owned and match the entry type                      |
+| `GET/PATCH/DELETE`     | `/api/v1/transactions/{id}`         |                                                                      |
+| `GET`                  | `/api/v1/transactions/export.csv`   | same filters as the list endpoint                                    |
+| `GET`                  | `/api/v1/reports/summary`           | totals + balance, optional date range                                |
+| `GET`                  | `/api/v1/reports/monthly`           | `months` (default 6), zero-filled series                             |
+| `GET`                  | `/api/v1/reports/by-category`       | `type` (default `expense`), optional date range                      |
+
+```bash
+# filtered, sorted, paginated list
+curl -H "Authorization: Bearer $ACCESS_TOKEN" \
+  'http://localhost:8000/api/v1/transactions?q=coffee&type=expense&date_from=2026-01-01&sort=amount&order=desc&page=1&page_size=20'
+
+# CSV export of the same selection
+curl -H "Authorization: Bearer $ACCESS_TOKEN" -OJ \
+  'http://localhost:8000/api/v1/transactions/export.csv?type=expense&date_from=2026-01-01'
+```
+
+Errors are always `{"detail": "..."}`: `400` for a broken business rule (bad
+date range, category/type mismatch), `404` for a missing or foreign resource,
+`409` for a duplicate category and `422` for schema validation.
+
 ## Deployment (configured, deployed in a later phase)
 
 - **Backend → Railway:** deploy the `backend/` directory. Uses `Dockerfile`
@@ -360,6 +404,7 @@ curl -i -X POST http://localhost:8000/api/v1/auth/logout -b cookies.txt
 
 ## Roadmap
 
-Phase 0: scaffold. Phase 1 (this): data layer — models, initial migration and
-validation schemas (no endpoints yet). Next: **Phase 2** authentication. See
-the architecture document for the full plan.
+Phase 0 scaffold → Phase 1 data layer → Phase 2 authentication → **MVP (this):**
+category and transaction APIs, reports, CSV export and the full React frontend.
+Next up: deployment to Railway and Vercel, then the enhancements listed in the
+architecture document.

@@ -4,9 +4,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 
+from app.api.errors import service_error_handler
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.rate_limit import limiter, rate_limit_exceeded_handler
+from app.services.errors import ServiceError
 
 
 def create_app() -> FastAPI:
@@ -20,6 +22,7 @@ def create_app() -> FastAPI:
 
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+    app.add_exception_handler(ServiceError, service_error_handler)
 
     app.add_middleware(
         CORSMiddleware,
