@@ -399,67 +399,113 @@ Backend and database on **Railway**, frontend on **Vercel**. The two are on
 different sites, so the refresh cookie must be cross-site (`Secure` +
 `SameSite=None`) and the API must allow the Vercel origin with credentials.
 
-### 1. Railway PostgreSQL
+The order matters: the frontend needs the backend URL, and the backend needs
+the final frontend origin, so CORS is set twice — a placeholder first, the real
+Vercel domain at the end.
 
-In a Railway project: **New → Database → PostgreSQL**. Nothing else to
-configure; the service publishes `DATABASE_URL`.
+### Step 1 — Railway PostgreSQL
 
-### 2. Railway backend
+Railway → **New Project** → **Database → Add PostgreSQL**. Nothing to configure;
+the service publishes `DATABASE_URL`, referenced in step 2.
 
-**New → GitHub Repo →** this repository, then in the service settings set
-**Root Directory** to `backend`. `backend/railway.json` supplies the rest:
-Docker build, `alembic upgrade head` as the pre-deploy command, the start
-command bound to Railway's `$PORT`, and `/api/v1/health` as the healthcheck.
-Generate a public domain under **Settings → Networking**.
+### Step 2 — Railway backend service
 
-Required variables (**Variables** tab):
+In the same project: **New → GitHub Repo →** `expense-tracker-app`, then
+**Settings → Root Directory** = `backend`.
 
-| Variable               | Value                                              |
-| ---------------------- | -------------------------------------------------- |
-| `DATABASE_URL`         | `${{Postgres.DATABASE_URL}}` (reference the DB service) |
-| `ENVIRONMENT`          | `production`                                        |
-| `JWT_SECRET_KEY`       | 32+ chars, e.g. `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
-| `BACKEND_CORS_ORIGINS` | `https://<your-app>.vercel.app` (comma-separated list) |
-| `COOKIE_SECURE`        | `true`                                              |
-| `COOKIE_SAMESITE`      | `none`                                              |
+`backend/railway.json` supplies the rest, so nothing else needs setting in the
+dashboard: Docker build, `alembic upgrade head` as the **pre-deploy command**,
+the start command bound to Railway's `$PORT`, and `/api/v1/health` as the
+healthcheck.
 
-The app rewrites Railway's driverless `postgres://` URL to
-`postgresql+psycopg://` itself, refuses to boot in production with a weak
-`JWT_SECRET_KEY`, and rejects `SameSite=None` without `Secure`.
+Add the [backend variables](#environment-variables) (**Variables** tab). Set
+`BACKEND_CORS_ORIGINS=http://localhost:5173` for now — step 6 replaces it.
 
-Migrations run automatically before each deploy; to run them by hand:
+### Step 3 — Public domain
+
+**Settings → Networking → Generate Domain**. Note the result, e.g.
+`https://expense-tracker-api-production.up.railway.app`.
+
+### Step 4 — Migrations
+
+The pre-deploy command runs `alembic upgrade head` on every deploy, so the
+first deploy already creates the schema. To run it manually (Railway CLI):
 
 ```bash
+railway link                                    # select the project
 railway run --service <backend-service> alembic upgrade head
 ```
 
-Verify: `curl https://<backend>.up.railway.app/api/v1/health` → `{"status":"ok", ...}`.
+Verify the API before touching the frontend:
 
-### 3. Vercel frontend
+```bash
+curl https://<backend>.up.railway.app/api/v1/health
+# {"status":"ok","service":"Expense Tracker API","environment":"production","version":"0.1.0"}
+```
 
-Import the repository (root of the repo — `vercel.json` builds `frontend/` and
-rewrites every path to `index.html` so client-side routes survive a refresh).
+A failing deploy here is almost always a rejected config — the API refuses to
+boot with a weak `JWT_SECRET_KEY` in production, or with `COOKIE_SAMESITE=none`
+and `COOKIE_SECURE=false`. The error naming the variable is in the deploy logs.
 
-| Variable       | Value                                                   |
-| -------------- | ------------------------------------------------------- |
-| `VITE_API_URL` | `https://<backend>.up.railway.app/api/v1` (include `/api/v1`) |
+### Step 5 — Vercel frontend
 
-Vite inlines the value at build time, so **redeploy after changing it**.
+Vercel → **Add New → Project** → import `expense-tracker-app`, keep the
+**repository root** as the root directory: `vercel.json` builds `frontend/` and
+rewrites every path to `index.html`, so client-side routes survive a refresh.
 
-### 4. Point the backend at the final Vercel domain
+Add the [frontend variable](#environment-variables) (`VITE_API_URL`, pointing
+at the domain from step 3, **including** `/api/v1`) and deploy. Vite inlines
+the value at build time, so changing it later requires a redeploy.
 
-Once Vercel gives you the production domain, set `BACKEND_CORS_ORIGINS` on
-Railway to exactly that origin (scheme + host, no trailing slash) and redeploy
-the backend. Preview deployments have their own domains — add them to the same
-comma-separated list if you want them to reach the API:
+### Step 6 — Point the backend at the final Vercel domain
+
+Back on Railway, set `BACKEND_CORS_ORIGINS` to the exact production origin
+Vercel issued — scheme + host, no trailing slash, no path — and redeploy the
+backend. Preview deployments get their own domains; add them to the same
+comma-separated list if they should reach the API:
 
 ```
 BACKEND_CORS_ORIGINS=https://expense-tracker.vercel.app,https://expense-tracker-git-main-you.vercel.app
 ```
 
-Symptoms of a mismatch: login works but the session is gone after a refresh
-(cookie blocked → check `COOKIE_SECURE`/`COOKIE_SAMESITE`), or requests fail in
-the browser with a CORS error while `curl` succeeds (origin not in the list).
+### Step 7 — Smoke test the deployment
+
+On the Vercel URL: register → log in → reload the page (the session must
+survive, which proves the cross-site refresh cookie works) → create an income
+and an expense category → add one transaction of each → check the dashboard
+totals and charts → search/filter → export CSV → edit and delete a transaction
+→ log out → confirm `/transactions` redirects to the login page.
+
+Two failure modes worth naming:
+
+- **Login works but the session is gone after a reload** — the refresh cookie
+  was dropped: check `COOKIE_SECURE=true` and `COOKIE_SAMESITE=none`.
+- **Browser requests fail with a CORS error while `curl` succeeds** — the
+  origin is not in `BACKEND_CORS_ORIGINS` (step 6), or it has a trailing slash.
+
+### Environment variables
+
+No real secrets belong in the repository; every value below is set in the
+provider dashboard.
+
+| Service               | Variable               | Required | Example / format                                             |
+| --------------------- | ---------------------- | -------- | ------------------------------------------------------------ |
+| Railway → backend     | `DATABASE_URL`         | yes      | `${{Postgres.DATABASE_URL}}` (reference the Postgres service) |
+| Railway → backend     | `ENVIRONMENT`          | yes      | `production`                                                   |
+| Railway → backend     | `JWT_SECRET_KEY`       | yes      | 32+ chars, e.g. `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
+| Railway → backend     | `BACKEND_CORS_ORIGINS` | yes      | `https://expense-tracker.vercel.app` (comma-separated, no trailing slash) |
+| Railway → backend     | `COOKIE_SECURE`        | yes      | `true`                                                         |
+| Railway → backend     | `COOKIE_SAMESITE`      | yes      | `none`                                                         |
+| Railway → backend     | `PROJECT_NAME`         | no       | `Expense Tracker API`                                          |
+| Railway → backend     | `ACCESS_TOKEN_EXPIRE_MINUTES` | no | `15`                                                         |
+| Railway → backend     | `REFRESH_TOKEN_EXPIRE_DAYS`   | no | `14`                                                         |
+| Railway → backend     | `COOKIE_DOMAIN`        | no       | unset unless the API and app share a parent domain, then `.example.com` |
+| Railway → backend     | `RATE_LIMIT_ENABLED`   | no       | `true`                                                         |
+| Railway → PostgreSQL  | —                      | —        | provisioned by Railway; no manual variables                    |
+| Vercel → frontend     | `VITE_API_URL`         | yes      | `https://expense-tracker-api-production.up.railway.app/api/v1` (include `/api/v1`) |
+
+`PORT` is injected by Railway — do not set it. `TEST_DATABASE_URL` is local-only
+and must never point at the production database.
 
 ## Roadmap
 
