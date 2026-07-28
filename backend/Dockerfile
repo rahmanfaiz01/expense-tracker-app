@@ -6,14 +6,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install dependencies first for better layer caching.
-COPY pyproject.toml ./
-RUN pip install --upgrade pip && pip install .
-
-# Copy application source and migration config.
+# Application source and migration config. The package must be present before
+# `pip install .` because the build backend reads `packages = ["app"]`.
+COPY pyproject.toml alembic.ini ./
 COPY app ./app
 COPY migrations ./migrations
-COPY alembic.ini ./alembic.ini
+
+RUN pip install --upgrade pip && pip install .
 
 EXPOSE 8000
 

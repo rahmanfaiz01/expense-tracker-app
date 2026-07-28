@@ -393,18 +393,76 @@ Errors are always `{"detail": "..."}`: `400` for a broken business rule (bad
 date range, category/type mismatch), `404` for a missing or foreign resource,
 `409` for a duplicate category and `422` for schema validation.
 
-## Deployment (configured, deployed in a later phase)
+## Deployment
 
-- **Backend → Railway:** deploy the `backend/` directory. Uses `Dockerfile`
-  (or the `Procfile`). Add a PostgreSQL plugin and set `DATABASE_URL`,
-  `BACKEND_CORS_ORIGINS` (your Vercel URL), and other env vars. The `release`
-  process runs `alembic upgrade head`.
-- **Frontend → Vercel:** import the repo; `vercel.json` builds `frontend/`.
-  Set `VITE_API_URL` to the Railway API URL (including `/api/v1`).
+Backend and database on **Railway**, frontend on **Vercel**. The two are on
+different sites, so the refresh cookie must be cross-site (`Secure` +
+`SameSite=None`) and the API must allow the Vercel origin with credentials.
+
+### 1. Railway PostgreSQL
+
+In a Railway project: **New → Database → PostgreSQL**. Nothing else to
+configure; the service publishes `DATABASE_URL`.
+
+### 2. Railway backend
+
+**New → GitHub Repo →** this repository, then in the service settings set
+**Root Directory** to `backend`. `backend/railway.json` supplies the rest:
+Docker build, `alembic upgrade head` as the pre-deploy command, the start
+command bound to Railway's `$PORT`, and `/api/v1/health` as the healthcheck.
+Generate a public domain under **Settings → Networking**.
+
+Required variables (**Variables** tab):
+
+| Variable               | Value                                              |
+| ---------------------- | -------------------------------------------------- |
+| `DATABASE_URL`         | `${{Postgres.DATABASE_URL}}` (reference the DB service) |
+| `ENVIRONMENT`          | `production`                                        |
+| `JWT_SECRET_KEY`       | 32+ chars, e.g. `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
+| `BACKEND_CORS_ORIGINS` | `https://<your-app>.vercel.app` (comma-separated list) |
+| `COOKIE_SECURE`        | `true`                                              |
+| `COOKIE_SAMESITE`      | `none`                                              |
+
+The app rewrites Railway's driverless `postgres://` URL to
+`postgresql+psycopg://` itself, refuses to boot in production with a weak
+`JWT_SECRET_KEY`, and rejects `SameSite=None` without `Secure`.
+
+Migrations run automatically before each deploy; to run them by hand:
+
+```bash
+railway run --service <backend-service> alembic upgrade head
+```
+
+Verify: `curl https://<backend>.up.railway.app/api/v1/health` → `{"status":"ok", ...}`.
+
+### 3. Vercel frontend
+
+Import the repository (root of the repo — `vercel.json` builds `frontend/` and
+rewrites every path to `index.html` so client-side routes survive a refresh).
+
+| Variable       | Value                                                   |
+| -------------- | ------------------------------------------------------- |
+| `VITE_API_URL` | `https://<backend>.up.railway.app/api/v1` (include `/api/v1`) |
+
+Vite inlines the value at build time, so **redeploy after changing it**.
+
+### 4. Point the backend at the final Vercel domain
+
+Once Vercel gives you the production domain, set `BACKEND_CORS_ORIGINS` on
+Railway to exactly that origin (scheme + host, no trailing slash) and redeploy
+the backend. Preview deployments have their own domains — add them to the same
+comma-separated list if you want them to reach the API:
+
+```
+BACKEND_CORS_ORIGINS=https://expense-tracker.vercel.app,https://expense-tracker-git-main-you.vercel.app
+```
+
+Symptoms of a mismatch: login works but the session is gone after a refresh
+(cookie blocked → check `COOKIE_SECURE`/`COOKIE_SAMESITE`), or requests fail in
+the browser with a CORS error while `curl` succeeds (origin not in the list).
 
 ## Roadmap
 
-Phase 0 scaffold → Phase 1 data layer → Phase 2 authentication → **MVP (this):**
-category and transaction APIs, reports, CSV export and the full React frontend.
-Next up: deployment to Railway and Vercel, then the enhancements listed in the
-architecture document.
+Phase 0 scaffold → Phase 1 data layer → Phase 2 authentication → MVP (category
+and transaction APIs, reports, CSV export, React frontend) → **deployment
+(this)**. Future enhancements are listed in the architecture document.

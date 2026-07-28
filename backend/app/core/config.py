@@ -3,10 +3,16 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEV_JWT_SECRET_KEY = "dev-only-insecure-secret-change-me"
+MIN_PRODUCTION_SECRET_LENGTH = 32
+
+# Managed Postgres providers (Railway, Heroku, Render, ...) publish driverless
+# URLs; SQLAlchemy needs the psycopg 3 driver spelled out.
+_DRIVERLESS_PREFIXES = ("postgres://", "postgresql://")
+_PSYCOPG_PREFIX = "postgresql+psycopg://"
 
 
 class Settings(BaseSettings):
@@ -57,6 +63,15 @@ class Settings(BaseSettings):
     RATE_LIMIT_LOGIN: str = "10/minute"
     RATE_LIMIT_REFRESH: str = "30/minute"
 
+    @field_validator("DATABASE_URL", mode="after")
+    @classmethod
+    def _use_psycopg_driver(cls, value: str) -> str:
+        """Rewrite a provider-supplied ``postgres(ql)://`` URL for psycopg 3."""
+        for prefix in _DRIVERLESS_PREFIXES:
+            if value.startswith(prefix):
+                return _PSYCOPG_PREFIX + value[len(prefix) :]
+        return value
+
     @property
     def cors_origins(self) -> list[str]:
         """Return the configured CORS origins as a list."""
@@ -64,9 +79,23 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _require_production_secret(self) -> "Settings":
-        """Refuse to boot a production deployment with the development secret."""
-        if self.ENVIRONMENT == "production" and self.JWT_SECRET_KEY == DEV_JWT_SECRET_KEY:
+        """Refuse to boot a production deployment with a weak signing secret."""
+        if self.ENVIRONMENT != "production":
+            return self
+        if self.JWT_SECRET_KEY == DEV_JWT_SECRET_KEY:
             raise ValueError("JWT_SECRET_KEY must be set to a strong secret in production")
+        if len(self.JWT_SECRET_KEY) < MIN_PRODUCTION_SECRET_LENGTH:
+            raise ValueError(
+                "JWT_SECRET_KEY must be at least "
+                f"{MIN_PRODUCTION_SECRET_LENGTH} characters in production"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _require_secure_cross_site_cookie(self) -> "Settings":
+        """Browsers drop ``SameSite=None`` cookies that are not also ``Secure``."""
+        if self.COOKIE_SAMESITE == "none" and not self.COOKIE_SECURE:
+            raise ValueError("COOKIE_SECURE must be true when COOKIE_SAMESITE is 'none'")
         return self
 
 
